@@ -1,0 +1,16 @@
+../Core/Src/main.c:76:1:__io_putchar	16	static
+../Core/Src/main.c:84:6:delay	16	static
+../Core/Src/main.c:98:8:Set_Pin_Output	32	static
+../Core/Src/main.c:107:8:Set_Pin_Input	32	static
+../Core/Src/main.c:121:8:DHT11_Start	8	static
+../Core/Src/main.c:131:11:DHT11_Check_Response	16	static
+../Core/Src/main.c:146:11:DHT11_Read	16	static
+../Core/Src/main.c:168:5:main	24	static
+../Core/Src/main.c:244:6:SystemClock_Config	88	static
+../Core/Src/main.c:291:13:MX_ADC1_Init	24	static
+../Core/Src/main.c:338:13:MX_TIM2_Init	32	static
+../Core/Src/main.c:383:13:MX_USART2_UART_Init	8	static
+../Core/Src/main.c:416:13:MX_GPIO_Init	40	static
+../Core/Src/main.c:455:6:HAL_ADC_ConvCpltCallback	16	static
+../Core/Src/main.c:460:6:HAL_TIM_IC_CaptureCallback	16	static
+../Core/Src/main.c:487:6:Error_Handler	4	static,ignoring_inline_asm
