@@ -51,7 +51,7 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 
 //set color map--------------------------------led
-#define MAX_LED 20
+#define MAX_LED 21
 #define USE_BRIGHTNESS 1
 #define PI 3.14159265
 
@@ -71,6 +71,14 @@ void SystemClock_Config(void);
 //---------------------get data r g b sensor--------------------
 int r = 0, g = 0, b = 0, r1 = 0, g1 = 0, b1 = 0;
 
+//------------------sensor variables ---------------------------
+uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
+uint16_t SUM, RH, TEMP;
+
+float Temperature = 0;
+float Humidity = 0;
+uint8_t Presence = 0;
+uint32_t adcvalue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,6 +111,13 @@ PUTCHAR_PROTOTYPE {
 	HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 0xFFFF);
 
 	return ch;
+}
+
+void delay(uint16_t time) {
+	/* change your code here for the delay in microseconds */
+	__HAL_TIM_SET_COUNTER(&htim2, 0);
+	while ((__HAL_TIM_GET_COUNTER(&htim2)) < time)
+		;
 }
 
 //----------------------------------set led data bit-----------------------------
@@ -173,6 +188,70 @@ void WS2812_Send(void) {
 	datasentflag = 0;
 }
 
+//-----DHT ----function setting-------------------------
+void Set_Pin_Output(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+	GPIO_InitStruct.Pin = GPIO_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+}
+
+void Set_Pin_Input(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+	GPIO_InitStruct.Pin = GPIO_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	HAL_GPIO_Init(GPIOx, &GPIO_InitStruct);
+}
+
+/*********************************** DHT11 FUNCTIONS ********************************************/
+
+#define DHT11_PORT GPIOA
+#define DHT11_PIN GPIO_PIN_1
+
+void DHT11_Start(void) {
+	Set_Pin_Output(DHT11_PORT, DHT11_PIN);  // set the pin as output
+	HAL_GPIO_WritePin(DHT11_PORT, DHT11_PIN, 0);   // pull the pin low
+	delay(18000);   // wait for 18ms
+	HAL_GPIO_WritePin(DHT11_PORT, DHT11_PIN, 1);   // pull the pin high
+	delay(20);   // wait for 20us
+	Set_Pin_Input(DHT11_PORT, DHT11_PIN);    // set as input
+}
+
+uint8_t DHT11_Check_Response(void) {
+	uint8_t Response = 0;
+	delay(40);
+	if (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN))) {
+		delay(80);
+		if ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))
+			Response = 1;
+		else
+			Response = -1; // 255
+	}
+	while ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))
+		;   // wait for the pin to go low
+
+	return Response;
+}
+
+uint8_t DHT11_Read(void) {
+	uint8_t i, j;
+	for (j = 0; j < 8; j++) {
+		while (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))
+			;   // wait for the pin to go high
+		delay(40);   // wait for 40 us
+		if (!(HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))   // if the pin is low
+		{
+			i &= ~(1 << (7 - j));   // write 0
+		} else
+			i |= (1 << (7 - j));  // if the pin is high, write 1
+		while ((HAL_GPIO_ReadPin(DHT11_PORT, DHT11_PIN)))
+			;  // wait for the pin to go low
+	}
+	return i;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -223,6 +302,8 @@ int main(void)
 
 	color_plant();
 	HAL_UART_Receive_IT(&huart1, (uint8_t*) Rxbuf, 3);
+	HAL_ADC_Start(&hadc1);		//ADC
+	HAL_TIM_Base_Start(&htim2);  //timer
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -232,11 +313,48 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		Nextion_Send("t3", "28 C");
-		Nextion_Send("t4", "30 %");
-		Nextion_Send("t5", "25 %");
+
+		DHT11_Start();
+		Presence = DHT11_Check_Response();
+		Rh_byte1 = DHT11_Read();
+		Rh_byte2 = DHT11_Read();
+		Temp_byte1 = DHT11_Read();
+		Temp_byte2 = DHT11_Read();
+		SUM = DHT11_Read();
+
+		TEMP = Temp_byte1;
+		RH = Rh_byte1;
+
+		Temperature = (float) TEMP;
+		Humidity = (float) RH;
+
+		printf("Temperature : %.0f Humidity : %.0f\r\n", Temperature, Humidity);
+
+		adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1);
+		if (adcvalue > 100) {
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+		} else {
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
+		}
+
+		printf("adc : %d \r\n", adcvalue);
+
+		char test_buffer[30];
+		sprintf(test_buffer, "%d %%", adcvalue);
+		Nextion_Send("t5", test_buffer);
+
+//		Humidity = 20.05;
+//		Temperature = 29.00;
+
+		sprintf(test_buffer, "%.1f %% ", Humidity);
+		Nextion_Send("t4", test_buffer);
+
+		sprintf(test_buffer, "%.1f C", Temperature);
+		Nextion_Send("t3", test_buffer);
+
 		color_swap(r, g, b);  // animation will add time , color
 
+		
   }
   /* USER CODE END 3 */
 }
@@ -654,6 +772,16 @@ void Nextion_Send(char *Id, char *String) {
 	HAL_UART_Transmit(&huart1, Cmd_End, sizeof(Cmd_End), 1000);
 }
 
+
+//-------get adc it -----------------------------------------------
+//void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+//	adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1); 		//ADC�??�� ?��?��?���? ?��?���? 반환
+//	if (adcvalue > 100) {
+//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);		//?���?
+//	} else {
+//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);		//켜기
+//	}
+//}
 
 /* USER CODE END 4 */
 
