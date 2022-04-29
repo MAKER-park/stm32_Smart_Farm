@@ -43,6 +43,7 @@
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 DMA_HandleTypeDef hdma_tim3_ch1_trig;
 
 UART_HandleTypeDef huart1;
@@ -69,7 +70,9 @@ char testbuf2[50];
 void SystemClock_Config(void);
 
 //---------------------get data r g b sensor--------------------
-int r = 0, g = 0, b = 0, r1 = 0, g1 = 0, b1 = 0;
+int r = 0, g = 0, b = 0, r1 = 0, g1 = 0, b1 = 0, threshold = 40, status = 0,
+		timer_counter = 0;
+;
 
 //------------------sensor variables ---------------------------
 uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
@@ -79,6 +82,8 @@ float Temperature = 0;
 float Humidity = 0;
 uint8_t Presence = 0;
 uint32_t adcvalue;
+
+int time_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,6 +95,7 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -251,7 +257,6 @@ uint8_t DHT11_Read(void) {
 	}
 	return i;
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -271,6 +276,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -288,10 +294,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART1_UART_Init();
   MX_ADC1_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-	HAL_Delay(1000);
-	printf("test start \r\n");
-
 	for (int i = 0; i < MAX_LED; i++) {
 		Set_Brightness(150);
 		set_led(i, 0, 0, 0);
@@ -300,10 +304,22 @@ int main(void)
 	}
 	HAL_Delay(1000);
 
+	for (int i = 12; i < MAX_LED; i++) {
+		Set_Brightness(255);
+		set_led(i, 240, 20, 110);
+		WS2812_Send();
+		HAL_Delay(10);
+	}
+
 	color_plant();
+
+	HAL_Delay(1000);
+	printf("test start \r\n");
 	HAL_UART_Receive_IT(&huart1, (uint8_t*) Rxbuf, 3);
-	HAL_ADC_Start(&hadc1);		//ADC
+	HAL_ADC_Start_IT(&hadc1);		//ADC
 	HAL_TIM_Base_Start(&htim2);  //timer
+	HAL_TIM_Base_Start_IT(&htim4);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -313,47 +329,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-		DHT11_Start();
-		Presence = DHT11_Check_Response();
-		Rh_byte1 = DHT11_Read();
-		Rh_byte2 = DHT11_Read();
-		Temp_byte1 = DHT11_Read();
-		Temp_byte2 = DHT11_Read();
-		SUM = DHT11_Read();
-
-		TEMP = Temp_byte1;
-		RH = Rh_byte1;
-
-		Temperature = (float) TEMP;
-		Humidity = (float) RH;
-
-		printf("Temperature : %.0f Humidity : %.0f\r\n", Temperature, Humidity);
-
-		adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1);
-		if (adcvalue > 100) {
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
-		} else {
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
-		}
-
-		printf("adc : %d \r\n", adcvalue);
-
-		char test_buffer[30];
-		sprintf(test_buffer, "%d %%", adcvalue);
-		Nextion_Send("t5", test_buffer);
-
-//		Humidity = 20.05;
-//		Temperature = 29.00;
-
-		sprintf(test_buffer, "%.1f %% ", Humidity);
-		Nextion_Send("t4", test_buffer);
-
-		sprintf(test_buffer, "%.1f C", Temperature);
-		Nextion_Send("t3", test_buffer);
-
-		color_swap(r, g, b);  // animation will add time , color
-
+		color_swap(r, g, b);
 		
   }
   /* USER CODE END 3 */
@@ -427,7 +403,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
@@ -441,7 +417,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -557,6 +533,51 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 7200-1;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 10000-1;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -654,7 +675,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(relay_GPIO_Port, relay_Pin, GPIO_PIN_RESET);
@@ -671,12 +692,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(DHT11_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : relay_Pin */
   GPIO_InitStruct.Pin = relay_Pin;
@@ -709,10 +730,9 @@ void color_swap(int r, int g, int b) {
 			Set_Brightness(150);
 			set_led(i, r, g, b);
 			WS2812_Send();
-			HAL_Delay(100);
+			HAL_Delay(10);
 		}
-		color_plant();
-		HAL_Delay(1000);
+		//color_plant();
 	}
 
 }
@@ -724,25 +744,20 @@ void color_plant() {
 		Set_Brightness(255);
 		set_led(i, 240, 20, 110);
 		WS2812_Send();
-		HAL_Delay(100);
+		HAL_Delay(10);
 	}
 }
 
 //-------------------------------nextion function----------------------------
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {  //344
+
 	HAL_UART_Receive_IT(&huart1, (uint8_t*) Rxbuf, 4);
-	HAL_UART_Transmit(&huart2, (uint8_t*) Rxbuf, 3, 0xFFFF);
-	printf("%c \n\r", (int*) Rxbuf[0]);
+//	HAL_UART_Transmit(&huart2, (uint8_t*) Rxbuf, 4, 0xFFFF);
 
-//	for (int i = 0; i < 4; i++) {	//check_date
-//		printf("%d : %c \n\r", i, (char*) Rxbuf[i]);
-//	}
+	for (int i = 0; i < 3; i++) {	//check_date
+		printf("%d : %c \n\r", i, (char*) Rxbuf[i]);
+	}
 
-//	if (Rxbuf[1] == 'O' && Rxbuf[3] == 'N') {
-//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-//	} else if (Rxbuf[1] == 'O' && Rxbuf[3] == 'F') {
-//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-//	}
 	if (Rxbuf[1] == 'R') {
 		sprintf(testbuf2, "%d", (int*) Rxbuf[3]);
 		printf("3 : %d \n\r", (int*) Rxbuf[3]);
@@ -759,6 +774,20 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 		b = (int*) Rxbuf[3];
 	}
 
+	if (Rxbuf[1] == 'W') {
+		sprintf(testbuf2, "%d", (int*) Rxbuf[3]);
+		printf("3 : %d \n\r", (int*) Rxbuf[3]);
+		threshold = (int*) Rxbuf[3];
+	}
+
+	if (Rxbuf[0] == 'e' || Rxbuf[1] == 'e') {
+		if (status == 0) {
+			status = 1;
+		} else {
+			status = 0;
+		}
+	}
+
 	printf("\n\r");
 	memset(Rxbuf, 0, sizeof(Rxbuf));
 
@@ -772,16 +801,68 @@ void Nextion_Send(char *Id, char *String) {
 	HAL_UART_Transmit(&huart1, Cmd_End, sizeof(Cmd_End), 1000);
 }
 
-
+long map(long x, long in_min, long in_max, long out_min, long out_max) {
+	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
 //-------get adc it -----------------------------------------------
-//void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
-//	adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1); 		//ADC�??�� ?��?��?���? ?��?���? 반환
-//	if (adcvalue > 100) {
-//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);		//?���?
-//	} else {
-//		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);		//켜기
-//	}
-//}
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1); 		//ADC
+	adcvalue = map(adcvalue, 0, 4096, 0, 100);
+	if (adcvalue > threshold) {
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);		//off
+	} else {
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);		//on
+	}
+}
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+//	printf("start_timer_intrrupt\r\n"); //2sec
+	time_counter++;
+
+	if (time_counter == 2) { // 2 = 2sec
+		printf("start_timer_intrrupt\r\n");
+
+//		adcvalue = (uint32_t) HAL_ADC_GetValue(&hadc1); 		//ADC
+
+		DHT11_Start();
+		Presence = DHT11_Check_Response();
+		Rh_byte1 = DHT11_Read();
+		Rh_byte2 = DHT11_Read();
+		Temp_byte1 = DHT11_Read();
+		Temp_byte2 = DHT11_Read();
+		SUM = DHT11_Read();
+
+		TEMP = Temp_byte1;
+		RH = Rh_byte1;
+
+		Temperature = (float) TEMP;
+		Humidity = (float) RH;
+		time_counter = 0;
+
+		printf("Temperature : %.0f Humidity : %.0f\r\n", Temperature, Humidity);
+
+		printf("adc : %d \r\n", adcvalue);
+
+		printf("r : %d, g : %d, b : %d threshold : %d, status : %d \r\n", r, g,
+				b, threshold, status);
+
+		if (status == 0) {
+			char test_buffer[30];
+			sprintf(test_buffer, "%d %%", adcvalue);
+			Nextion_Send("t5", test_buffer);
+
+			sprintf(test_buffer, "%.1f %% ", Humidity);
+			Nextion_Send("t4", test_buffer);
+
+			sprintf(test_buffer, "%.1f C", Temperature);
+			Nextion_Send("t3", test_buffer);
+		}
+
+
+	}
+
+
+
+}
 
 /* USER CODE END 4 */
 
