@@ -94,7 +94,7 @@ void ESP_Send_Multi (char *APIkey, int numberoffileds, uint16_t value[])
 	char field_buf[200] = {0};
 
 
-	Uart_sendstring("AT+CIPSTART=\"TCP\",\"184.106.153.149\",80\r\n");
+	Uart_sendstring("AT+CIPSTART=\"TCP\",\"184.106.153.149\",80\r\n"); //get data send
 	while (!(Wait_for("OK\r\n")));
 
 	sprintf (local_buf, "GET /update?api_key=%s", APIkey);
